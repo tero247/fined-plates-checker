@@ -1,1 +1,349 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Tra cứu phương tiện bị phạt – Đà Lạt</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Tesseract.js for client-side OCR -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: "Plus Jakarta Sans", system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji"; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+  <!-- Header / Hero -->
+  <header class="relative overflow-hidden">
+    <div class="absolute inset-0 bg-gradient-to-br from-sky-100 via-indigo-100 to-fuchsia-100"></div>
+    <div class="relative max-w-5xl mx-auto px-6 sm:px-8 pt-14 pb-12">
+      <div class="flex items-center gap-3">
+        <div class="h-10 w-10 rounded-2xl bg-white/80 backdrop-blur shadow ring-1 ring-slate-200 flex items-center justify-center font-black">DL</div>
+        <div class="text-sm text-slate-600">Trung tâm Giám sát Điều hành Giao thông (demo)</div>
+      </div>
+      <h1 class="mt-6 text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight text-slate-900">
+        Tra cứu nhanh: <span class="text-indigo-700">biển số</span> của bạn có nằm trong danh sách bị phạt?
+      </h1>
+      <p class="mt-3 text-slate-700 max-w-2xl">
+        Nhập biển số xe (ô tô/xe máy) hoặc tải các ảnh danh sách (ảnh bạn đã gửi) để hệ thống đọc tự động bằng OCR.
+        Tất cả xử lý <span class="font-semibold">ngay trên trình duyệt</span>, không gửi dữ liệu ra ngoài.
+      </p>
+      <!-- Search card -->
+      <div class="mt-8 bg-white/90 backdrop-blur rounded-2xl shadow-lg ring-1 ring-slate-200 p-4 sm:p-6">
+        <form id="searchForm" class="grid md:grid-cols-[1fr_auto] gap-3">
+          <label class="relative">
+            <span class="sr-only">Biển số</span>
+            <input id="plateInput" type="text" inputmode="text" autocomplete="off"
+                   placeholder="VD: 49A-142.88 hoặc 49A14288"
+                   class="w-full rounded-xl border border-slate-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-200/60 px-4 py-3 text-lg placeholder-slate-400 outline-none">
+            <button type="button" id="normalizeBtn"
+                    class="hidden absolute right-2 top-1/2 -translate-y-1/2 text-xs px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 ring-1 ring-slate-200">
+              Chuẩn hoá
+            </button>
+          </label>
+          <button id="checkBtn" class="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 text-lg font-semibold shadow-lg shadow-indigo-600/20">
+            Kiểm tra
+          </button>
+        </form>
+
+        <div id="result" class="mt-4 hidden">
+          <div id="resultBadge" class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-semibold"></div>
+          <p id="resultHint" class="mt-2 text-sm text-slate-600"></p>
+        </div>
+      </div>
+
+      <!-- Uploader -->
+      <div class="mt-5">
+        <div class="bg-white rounded-2xl ring-1 ring-slate-200 p-4 sm:p-6">
+          <h2 class="text-lg font-semibold">Tải danh sách (tùy chọn)</h2>
+          <p class="text-sm text-slate-600">
+            Kéo thả hoặc chọn các ảnh chụp danh sách xử phạt (JPG/PNG). Hệ thống sẽ đọc & trích xuất biển số tự động.
+          </p>
+          <div id="drop" class="mt-3 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50/60 p-6 text-center text-slate-600">
+            Kéo & thả ảnh vào đây, hoặc
+            <label class="mx-1 font-semibold text-indigo-700 cursor-pointer">
+              chọn file
+              <input id="fileInput" type="file" accept="image/*" multiple class="sr-only">
+            </label>
+          </div>
+          <div id="ocrProgress" class="mt-3 hidden">
+            <div class="h-2 w-full bg-slate-200 rounded-full overflow-hidden">
+              <div id="ocrBar" class="h-full w-0 bg-indigo-600 transition-all"></div>
+            </div>
+            <p id="ocrStatus" class="mt-2 text-sm text-slate-600">Đang xử lý…</p>
+          </div>
+
+          <div class="mt-4 grid gap-2 sm:grid-cols-2 md:grid-cols-3" id="thumbs"></div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Data & Table -->
+  <main class="max-w-5xl mx-auto px-6 sm:px-8 pb-24">
+    <section class="mt-10 bg-white rounded-2xl ring-1 ring-slate-200 shadow-sm">
+      <div class="p-4 sm:p-6 flex items-center justify-between gap-4">
+        <h3 class="text-lg font-semibold">Danh sách biển số đã nạp</h3>
+        <div class="flex items-center gap-2">
+          <input id="filterInput" type="text" placeholder="Lọc nhanh (ví dụ: 49A-)"
+                 class="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-4 focus:ring-indigo-200/60 focus:border-indigo-500">
+          <button id="exportBtn" class="rounded-lg bg-slate-900 text-white px-3 py-2 text-sm font-semibold hover:bg-black">
+            Tải JSON
+          </button>
+          <button id="resetBtn" class="rounded-lg bg-slate-100 px-3 py-2 text-sm font-semibold ring-1 ring-slate-200 hover:bg-slate-200">
+            Xoá dữ liệu
+          </button>
+        </div>
+      </div>
+      <div class="border-t border-slate-200">
+        <div class="overflow-x-auto">
+          <table class="min-w-full text-sm" id="dataTable">
+            <thead class="bg-slate-50 text-slate-600">
+              <tr>
+                <th class="text-left px-4 py-2 font-semibold">#</th>
+                <th class="text-left px-4 py-2 font-semibold">Biển số</th>
+                <th class="text-left px-4 py-2 font-semibold">Mô tả vi phạm (nếu OCR được)</th>
+                <th class="text-left px-4 py-2 font-semibold">Nguồn</th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+        <div id="emptyState" class="p-6 text-center text-slate-500">
+          Chưa có dữ liệu. Bạn có thể tải ảnh để hệ thống đọc tự động, hoặc tra cứu trực tiếp bằng ô tìm kiếm phía trên.
+        </div>
+      </div>
+    </section>
+
+    <footer class="mt-10 text-center text-xs text-slate-500">
+      Demo mục đích cá nhân. Hãy kiểm chứng thông tin trước khi sử dụng. © 2025
+    </footer>
+  </main>
+
+  <script>
+    // --- Utilities -----------------------------------------------------------
+    const storeKey = "fined-plates";
+    const $ = (sel) => document.querySelector(sel);
+    const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+
+    // VN plate normalization:
+    // Convert variations like "49 A142.88", "49A14288", "49A-14288", "49A-142.88"
+    function normalizePlate(input) {
+      if (!input) return "";
+      let s = input.toUpperCase()
+        .replace(/[^\dA-Z]/g, "")
+        .replace(/O/g, "0") // O -> 0
+        .replace(/I/g, "1"); // I -> 1 (sometimes OCR)
+      // common forms: NN{letter(s)}{5 or 6 digits}. Optionally dot before last 2 digits.
+      // Try to insert separators: hyphen after prefix, dot before last 2 digits.
+      const prefixMatch = s.match(/^(\d{2}[A-Z]{1,3})(\d{4,6})$/);
+      if (prefixMatch) {
+        const p = prefixMatch[1];
+        const digits = prefixMatch[2];
+        const left = digits.slice(0, -2);
+        const right = digits.slice(-2);
+        return `${p}-${left}.${right}`;
+      }
+      // If already has hyphen but missing dot: 49A-14288
+      const hy = s.match(/^(\d{2}[A-Z]{1,3})-(\d{4,6})$/);
+      if (hy) {
+        const left = hy[2].slice(0, -2), right = hy[2].slice(-2);
+        return `${hy[1]}-${left}.${right}`;
+      }
+      // If already dotted but missing hyphen: 49A142.88
+      const dot = s.match(/^(\d{2}[A-Z]{1,3})(\d{2,4})\.(\d{2})$/);
+      if (dot) return `${dot[1]}-${dot[2]}.${dot[3]}`;
+      // If already good: keep "49A-142.88"
+      const good = input.toUpperCase().trim();
+      return good;
+    }
+
+    // Regex to catch plates in text (tolerant):
+    const plateRegexes = [
+      /\b(\d{2}[A-Z]{1,3})[\s-]?(\d{2,4})\.(\d{2})\b/g,  // 49A-142.88 or 49A142.88
+      /\b(\d{2}[A-Z]{1,3})[-\s]?(\d{4,6})\b/g,           // 49A-14288 or 49A14288
+      /\b(\d{2}[A-Z]{1,3})\s*[-]?\s*(\d{2,4})[., ](\d{2})\b/g // with comma/space variants
+    ];
+
+    function extractPlates(rawText) {
+      const text = rawText.toUpperCase().replace(/[–—]/g, "-");
+      const found = new Map(); // plate -> context
+      const lines = text.split(/\n/);
+      for (const ln of lines) {
+        let context = ln.trim();
+        for (const rx of plateRegexes) {
+          let m;
+          while ((m = rx.exec(ln)) !== null) {
+            const joined = normalizePlate((m[1] || "") + "-" + ((m[2] || "") + (m[3] ? "." + m[3] : "")));
+            if (joined) found.set(joined, context);
+          }
+        }
+        // Also try to catch forms like 72N82926 (no hyphen/dot)
+        const compact = ln.match(/\b\d{2}[A-Z]{1,3}\d{5,6}\b/g);
+        if (compact) {
+          for (const c of compact) found.set(normalizePlate(c), ln.trim());
+        }
+      }
+      return [...found.entries()].map(([plate, context]) => ({ plate, context }));
+    }
+
+    function saveData(list) {
+      localStorage.setItem(storeKey, JSON.stringify(list));
+    }
+    function loadData() {
+      const raw = localStorage.getItem(storeKey);
+      return raw ? JSON.parse(raw) : [];
+    }
+    function setQueryParam(k, v) {
+      const url = new URL(window.location);
+      if (v) url.searchParams.set(k, v);
+      else url.searchParams.delete(k);
+      history.replaceState({}, "", url);
+    }
+
+    // --- State ---------------------------------------------------------------
+    let dataset = loadData(); // [{plate, context, src}]
+    renderTable();
+
+    // Prefill from ?plate=
+    const qp = new URLSearchParams(location.search);
+    const prefill = qp.get("plate");
+    if (prefill) {
+      $("#plateInput").value = prefill;
+      checkPlate();
+    }
+
+    // --- Search / Check ------------------------------------------------------
+    $("#searchForm").addEventListener("submit", (e) => {
+      e.preventDefault();
+      checkPlate();
+    });
+
+    $("#filterInput").addEventListener("input", () => renderTable());
+
+    $("#resetBtn").addEventListener("click", () => {
+      dataset = [];
+      saveData(dataset);
+      renderTable();
+      $("#result").classList.add("hidden");
+      $("#thumbs").innerHTML = "";
+    });
+
+    $("#exportBtn").addEventListener("click", () => {
+      const blob = new Blob([JSON.stringify(dataset, null, 2)], {type: "application/json"});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = "fined-plates.json"; a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    function checkPlate() {
+      const raw = $("#plateInput").value.trim();
+      if (!raw) return;
+      const norm = normalizePlate(raw);
+      $("#plateInput").value = norm;
+      setQueryParam("plate", norm);
+
+      const idx = dataset.findIndex(r => r.plate === norm);
+      const badge = $("#resultBadge"), hint = $("#resultHint");
+      $("#result").classList.remove("hidden");
+
+      if (idx >= 0) {
+        badge.className = "inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-semibold bg-red-600/10 text-red-700 ring-1 ring-red-200";
+        badge.innerHTML = `🚨 Phát hiện: <span class="font-bold">${norm}</span>`;
+        hint.textContent = "Biển số nằm trong danh sách bị phạt (theo ảnh đã nạp). Hãy liên hệ cơ quan chức năng để xác minh chi tiết.";
+      } else {
+        badge.className = "inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-semibold bg-emerald-600/10 text-emerald-700 ring-1 ring-emerald-200";
+        badge.innerHTML = `✅ Không thấy trong danh sách: <span class="font-bold">${norm}</span>`;
+        hint.textContent = "Nếu bạn chưa nạp ảnh đầy đủ, kết quả chỉ mang tính tham khảo.";
+      }
+    }
+
+    // --- Drag & Drop / OCR ---------------------------------------------------
+    const drop = $("#drop");
+    drop.addEventListener("dragover", e => { e.preventDefault(); drop.classList.add("bg-indigo-50"); });
+    drop.addEventListener("dragleave", () => drop.classList.remove("bg-indigo-50"));
+    drop.addEventListener("drop", (e) => {
+      e.preventDefault(); drop.classList.remove("bg-indigo-50");
+      handleFiles(e.dataTransfer.files);
+    });
+    $("#fileInput").addEventListener("change", (e) => handleFiles(e.target.files));
+
+    async function handleFiles(fileList) {
+      const files = [...fileList].filter(f => /^image\//.test(f.type));
+      if (!files.length) return;
+      $("#ocrProgress").classList.remove("hidden");
+      $("#ocrStatus").textContent = "Đang đọc ảnh…";
+      $("#ocrBar").style.width = "0%";
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        showThumb(file);
+        const text = await runOCR(file, (p) => {
+          const progress = Math.round(((i + p) / files.length) * 100);
+          $("#ocrBar").style.width = progress + "%";
+        });
+        const rows = extractPlates(text).map(r => ({...r, src: file.name}));
+        // Merge unique
+        for (const r of rows) {
+          if (!dataset.some(d => d.plate === r.plate)) dataset.push(r);
+        }
+        saveData(dataset);
+        renderTable();
+      }
+      $("#ocrStatus").textContent = "Hoàn tất.";
+      setTimeout(() => $("#ocrProgress").classList.add("hidden"), 800);
+    }
+
+    function showThumb(file) {
+      const url = URL.createObjectURL(file);
+      const el = document.createElement("div");
+      el.className = "rounded-xl overflow-hidden ring-1 ring-slate-200 bg-white";
+      el.innerHTML = `<img src="${url}" alt="${file.name}" class="w-full h-40 object-cover">`;
+      $("#thumbs").appendChild(el);
+    }
+
+    async function runOCR(file, onProgress) {
+      const worker = await Tesseract.createWorker("eng", 1, {
+        logger: (m) => {
+          if (m.status === "recognizing text" && onProgress) onProgress(m.progress);
+        }
+      });
+      // Vietnamese letters aren’t needed; the lists are Latin/number heavy.
+      const { data: { text } } = await worker.recognize(file);
+      await worker.terminate();
+      return text;
+    }
+
+    // --- Render table --------------------------------------------------------
+    function renderTable() {
+      const tbody = $("#rows");
+      const filter = $("#filterInput").value.trim().toUpperCase();
+      const list = dataset
+        .filter(r => !filter || r.plate.includes(filter))
+        .sort((a, b) => a.plate.localeCompare(b.plate));
+
+      tbody.innerHTML = "";
+      if (!list.length) {
+        $("#emptyState").classList.remove("hidden");
+        return;
+      }
+      $("#emptyState").classList.add("hidden");
+
+      list.forEach((r, i) => {
+        const tr = document.createElement("tr");
+        tr.className = i % 2 ? "bg-white" : "bg-slate-50/40";
+        tr.innerHTML = `
+          <td class="px-4 py-2 text-slate-500">${i + 1}</td>
+          <td class="px-4 py-2 font-semibold">${r.plate}</td>
+          <td class="px-4 py-2 text-slate-600">${(r.context || "").replace(r.plate, `<span class="font-semibold">${r.plate}</span>`)}</td>
+          <td class="px-4 py-2 text-slate-500">${r.src || "OCR"}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+  </script>
+</body>
+</html>
 
